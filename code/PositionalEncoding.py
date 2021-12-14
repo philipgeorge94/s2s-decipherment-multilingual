@@ -1,4 +1,24 @@
-class PositionalEncoding(nn.Module):
+from datasets import *
+from transformers import AutoTokenizer, AutoModel, AutoModelForSequenceClassification, AdamW, DataCollatorWithPadding, \
+    get_scheduler
+import pandas as pd
+import torch
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
+from data_utils import *
+from solver import *
+from PositionalEncoding import *
+from models import *
+from torch.nn import Transformer, TransformerEncoder, TransformerEncoderLayer
+import torch.nn
+import math
+from torch import Tensor
+import sys
+FOLDERNAME = 'CS685-Project/s2s-decipherment-multilingual'
+
+sys.path.append('/content/{}'.format(FOLDERNAME))
+
+class PositionalEncoding(torch.nn.Module):
 
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
         super().__init__()
