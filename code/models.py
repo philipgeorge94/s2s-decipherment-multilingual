@@ -1,21 +1,38 @@
 from datasets import *
-from transformers import AutoTokenizer, AutoModel, AutoModelForSequenceClassification, AdamW, DataCollatorWithPadding, \
-    get_scheduler
+from transformers import AutoTokenizer, AutoModel, AdamW, DataCollatorWithPadding, get_scheduler, logging
 import pandas as pd
 import torch
+from torch import Tensor
+from torch.optim import *
+import torch.optim
 from torch.utils.data import DataLoader
+from torch.nn import *
+from torch.nn.functional import one_hot as get_one_hot_enc
+from torch.nn.functional import cross_entropy
+from torch.nn import Transformer, TransformerEncoder, TransformerEncoderLayer, Embedding, TransformerDecoderLayer, TransformerDecoder
 from tqdm.auto import tqdm
-from data_utils import *
-from solver import *
-from PositionalEncoding import *
-from torch.nn import Transformer, TransformerEncoder, TransformerEncoderLayer
+import numpy as np
+from os import listdir
+from os.path import isfile, join
 import math
 import sys
+from lxml.html import fromstring
+import lxml.html as PARSER
+import string
+import random
+from collections import Counter
 
 FOLDERNAME = 'CS685-Project/s2s-decipherment-multilingual'
-sys.path.append('/content/{}'.format(FOLDERNAME))
+sys.path.append('/content/drive/My Drive/{}/code'.format(FOLDERNAME))
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-dropout_prob = 0
+from PositionalEncoding import *
+from preprocess import *
+from models import *
+from data_utils import *
+from data import *
+from debug import *
+from train_test import *
 
 class Deciphormer(torch.nn.Module):
     '''
@@ -24,7 +41,7 @@ class Deciphormer(torch.nn.Module):
     '''
 
     def __init__(self, ntoken: int = 30, d_model: int = 512, nhead: int = 8, d_hid: int = 2048, nlayers: int = 6,
-                 dropout: float = 0.5):
+                 dropout: float = 0.0):
         # Initialize model attributes
         super().__init__()
         self.d_model = d_model
@@ -32,21 +49,31 @@ class Deciphormer(torch.nn.Module):
         self.d_hid = d_hid
         self.nlayers = nlayers
         self.dropout = dropout
+        self.best_val_acc = -1
 
         # Define model layers
 
-        self.embedder = nn.Embedding(ntoken, d_model)
-        self.pos_encoder = PositionalEncoding(ntoken, d_model)
+        self.embedder = Embedding(ntoken, d_model, padding_idx = 27)
+        self.pos_encoder = PositionalEncoding(d_model, max_len = d_model)
         encoder_layers = TransformerEncoderLayer(self.d_model, nhead, d_hid, dropout, batch_first = True)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
-        decoder_layers = TransformerDecoderLayer(self.d_model, nhead, d_hid, batch_first = True)
-        self.transformer_decoder = TransformerDecoder(decoder_layers, nlayers)
 
-    def forward(self, data: Tensor, mask: Tensor) -> Tensor:
-      src = self.embedder(src) * math.sqrt(self.d_model)
+        self.embedder2 = Embedding(ntoken, d_model, padding_idx = 27)
+        decoder_layers = TransformerDecoderLayer(d_model, nhead, d_hid, dropout, batch_first = True)
+        self.transformer_decoder = TransformerDecoder(decoder_layers, nlayers)
+        self.linearout = torch.nn.Linear(d_model, ntoken)
+
+    def forward(self, input_ids, labels, mask=None):
+      src = self.embedder(input_ids) * math.sqrt(self.d_model)
+      # print(src.shape)
       src = self.pos_encoder(src)
+      # print(src.shape)
       out1 = self.transformer_encoder(src, mask)
-      out2 = self.decoder(out1)
+      # print(out1.shape)
+
+      embed_tgt = self.embedder2(labels) * math.sqrt(self.d_model)
+      out2 = self.transformer_decoder(embed_tgt, out1)
+      out2 = self.linearout(out2)
       return (out1, out2)
 
 class MLC(Deciphormer):

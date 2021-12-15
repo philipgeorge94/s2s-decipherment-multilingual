@@ -1,9 +1,38 @@
+from datasets import *
+from transformers import AutoTokenizer, AutoModel, AdamW, DataCollatorWithPadding, get_scheduler, logging
+import pandas as pd
+import torch
+from torch import Tensor
+from torch.optim import *
+import torch.optim
+from torch.utils.data import DataLoader
+from torch.nn import *
+from torch.nn.functional import one_hot as get_one_hot_enc
+from torch.nn.functional import cross_entropy
+from torch.nn import Transformer, TransformerEncoder, TransformerEncoderLayer, Embedding, TransformerDecoderLayer, TransformerDecoder
+from tqdm.auto import tqdm
+import numpy as np
+from os import listdir
+from os.path import isfile, join
+import math
+import sys
 from lxml.html import fromstring
 import lxml.html as PARSER
 import string
 import random
 from collections import Counter
 
+FOLDERNAME = 'CS685-Project/s2s-decipherment-multilingual'
+sys.path.append('/content/drive/My Drive/{}/code'.format(FOLDERNAME))
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+from PositionalEncoding import *
+from preprocess import *
+from models import *
+from data_utils import *
+from data import *
+from debug import *
+from train_test import *
 
 #mainly for gigaword to parse from Gigaword SGML files to data like Gutenberg
 
@@ -74,21 +103,6 @@ def decrypt(cipher, keyMap):
     #keyMap = dict(zip(key, alphabet))
     return ''.join(keyMap.get(c.lower(), c) for c in cipher)
 
-#Frequency encoding returned as string
-def frequency_encode_string(input_string):
-    c_string = input_string.replace(" ","")
-    c_string = "".join(input_string.split('_'))
-    x = Counter(c_string)
-    l = x.most_common()
-    freq = {}
-    for i in range(len(l)):
-      freq[l[i][0]] = i
-    freq_enc = ''
-    for c in input_string:
-      freq_enc += '_' if c == '_' else str(freq[c])
-      freq_enc += " "
-    return freq_enc #this is space separated for readability
-
 #Frequency Encoding returned as a list of chars
 def frequency_encode_char_list(input_string):
     c_string = input_string.replace(" ","")
@@ -107,3 +121,25 @@ def frequency_encode_char_list(input_string):
 def string_as_list(input_string):
     c_string = input_string.replace(" ","")
     return list(c_string)
+
+#Frequency encoding returned as string
+def frequency_encode_string(input_string):
+    c_string = input_string.replace(" ","")
+    c_string = "".join(input_string.split('_'))
+    debug_print("C String without _: ")
+    debug_print(c_string + '\n')
+    x = Counter(c_string)
+    l = x.most_common()
+    debug_print("Sorted Character Frequencies")
+    debug_print(l)
+    debug_print("")
+    freq = {}
+    for i in range(len(l)):
+      freq[l[i][0]] = i
+    freq_enc = ''
+    for c in input_string:
+      freq_enc += '_' if c == '_' else str(freq[c])
+      freq_enc += " "
+    debug_print("Freq Encoded Stripped String")
+    debug_print(freq_enc.strip() + "|" + '\n')
+    return freq_enc.strip() #this is space separated for readability
