@@ -26,14 +26,6 @@ FOLDERNAME = 'CS685-Project/s2s-decipherment-multilingual'
 sys.path.append('/content/drive/My Drive/{}/code'.format(FOLDERNAME))
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-from PositionalEncoding import *
-from preprocess import *
-from models import *
-from data_utils import *
-from data import *
-from debug import *
-from train_test import *
-
 class PositionalEncoding(torch.nn.Module):
 
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):

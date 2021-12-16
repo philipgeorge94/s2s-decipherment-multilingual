@@ -22,18 +22,10 @@ import string
 import random
 from collections import Counter
 
-FOLDERNAME = 'CS685-Project/s2s-decipherment-multilingual'
-sys.path.append('/content/drive/My Drive/{}/code'.format(FOLDERNAME))
+# FOLDERNAME = 'CS685-Project/s2s-decipherment-multilingual'
+# sys.path.append('/content/drive/My Drive/{}/code'.format(FOLDERNAME))
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-
-from PositionalEncoding import *
-from preprocess import *
-from models import *
-from data_utils import *
-from data import *
-from debug import *
-from train_test import *
-
+from debug import debug_print, get_debug_mode
 #mainly for gigaword to parse from Gigaword SGML files to data like Gutenberg
 
 def preprocess_to_file(read_filename, write_filename):
@@ -126,13 +118,13 @@ def string_as_list(input_string):
 def frequency_encode_string(input_string):
     c_string = input_string.replace(" ","")
     c_string = "".join(input_string.split('_'))
-    debug_print("C String without _: ")
-    debug_print(c_string + '\n')
+    # debug_print("C String without _: ")
+    # debug_print(c_string + '\n')
     x = Counter(c_string)
     l = x.most_common()
-    debug_print("Sorted Character Frequencies")
-    debug_print(l)
-    debug_print("")
+    # debug_print("Sorted Character Frequencies")
+    # debug_print(l)
+    # debug_print("")
     freq = {}
     for i in range(len(l)):
       freq[l[i][0]] = i
@@ -140,6 +132,6 @@ def frequency_encode_string(input_string):
     for c in input_string:
       freq_enc += '_' if c == '_' else str(freq[c])
       freq_enc += " "
-    debug_print("Freq Encoded Stripped String")
-    debug_print(freq_enc.strip() + "|" + '\n')
+    # debug_print("Freq Encoded Stripped String")
+    # debug_print(freq_enc.strip() + "|" + '\n')
     return freq_enc.strip() #this is space separated for readability

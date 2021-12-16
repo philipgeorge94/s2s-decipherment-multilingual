@@ -22,14 +22,20 @@ import string
 import random
 from collections import Counter
 
-FOLDERNAME = 'CS685-Project/s2s-decipherment-multilingual'
-sys.path.append('/content/drive/My Drive/{}/code'.format(FOLDERNAME))
+# FOLDERNAME = 'CS685-Project/s2s-decipherment-multilingual'
+# sys.path.append('/content/drive/My Drive/{}/code'.format(FOLDERNAME))
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-from PositionalEncoding import *
-from preprocess import *
-from models import *
-from data_utils import *
-from data import *
-from debug import *
-from train_test import *
+from data_utils import str_to_tensor
+
+class CipherDataset(torch.utils.data.Dataset):
+  def __init__(self, df):
+    self.input_ids = np.array(df['input_ids'].map(str_to_tensor).values)
+    self.labels = np.array(df['labels'].map(str_to_tensor).values)
+    self.lang_labels = np.array(df['lang'].values)
+        
+  def __len__(self):
+    return len(self.labels)
+
+  def __getitem__(self, idx):
+    return {'input_ids': self.input_ids[idx], 'labels':self.labels[idx], 'lang': self.lang_labels[idx]}
