@@ -23,7 +23,7 @@ $ pip install torchmetrics --quiet
 6. Train,Val, and Test data have to be either generated afresh or loaded from ./master_data/ depending on whether the parrticular experiment has been run before
 7. The remaining cells can be run one after another
 
-##Folders and Files
+## Folders and Files
 > **Note:** Other files may be present in the folders, but those are not strictly necessary for the project
 ### / 'root'
 1. **baseline_language_loss.ipynb** contains the main code for experiments and should be the entry point for the user
