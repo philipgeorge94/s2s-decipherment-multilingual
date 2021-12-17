@@ -29,7 +29,21 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 from data_utils import str_to_tensor
 
 class CipherDataset(torch.utils.data.Dataset):
+  '''
+  Defines the CipherDataset object type. Every CipherDataset object has a 
+  __get_item__() function that returns three data elements
+  1. input_ids of the frequency encoded input sequence
+  2. Labels of the target sequence represented by vocabulary indices
+
+  '''
   def __init__(self, df):
+    '''
+    Takes a DataFrame as input and converts the string columns to tensors
+    using a map function defined in ./data_utils.py.
+    The data is stored as numpy arrays which are automatically converted to
+    torch.Tensor by PyTorch when __get_item__ is called by the DataLoader() 
+    constructor.
+    '''
     self.input_ids = np.array(df['input_ids'].map(str_to_tensor).values)
     self.labels = np.array(df['labels'].map(str_to_tensor).values)
     self.lang_labels = np.array(df['lang'].values)
@@ -38,4 +52,9 @@ class CipherDataset(torch.utils.data.Dataset):
     return len(self.labels)
 
   def __getitem__(self, idx):
+    '''
+    This function returns the three data elements. Pytorch automatically 
+    stacks them into batch-sized tensors of(batch_size, seq_len) dimensions,
+    but preserves the dict() structure,
+    '''
     return {'input_ids': self.input_ids[idx], 'labels':self.labels[idx], 'lang': self.lang_labels[idx]}

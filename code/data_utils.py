@@ -30,26 +30,45 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 from preprocess import frequency_encode_string, get_alphabet, frequency_encode_string_with_spaces
 from debug import debug_print, get_debug_mode, get_dev_mode
 
+#global variables that can be accessed in this module
 max_len = 258
 space_enc = 'with_space'
 
 def get_max_len():
+  '''
+  Getter for max_len
+  '''
   global max_len
   return max_len
 
 def set_max_len(value):
+  '''
+  setter for max_len
+  '''
   global max_len
   max_len = value
 
 def get_space_enc():
+  '''
+  getter for space encoding scheme
+  '''
   global space_enc
   return space_enc
 
 def set_space_enc(value):
+  '''
+  Setter for space encoding scheme
+  '''
   global space_enc
   space_enc = value
 
 def freq_array(line):
+  '''
+  1. Used as a mapping function for pandas.DataFrames.Takes a string input of 
+  ciphertext chars, and outputs a string of frequency encoded chars. 
+  2. Behaves differently for different max_len and space_enc.
+  3. Used to preprocess the input to encoder
+  '''
   max_len = get_max_len()
   space_enc = get_space_enc()
 
@@ -69,25 +88,32 @@ def freq_array(line):
   freq_arr = [x for x in freq_str.split()][:max_len]
   freq_arr = ['28']+freq_arr+['29']
   
-  # print(max_len)
-  # debug_print("Integer Array")
-  # debug_print(freq_arr)
-  # debug_print("")
   return ' '.join(freq_arr + [str(chr_to_idx['<PAD>'])] * (max_len + 2 - len(freq_arr)))
 
 def alpha_enc(row):
-  # debug_print("Row")
-  # debug_print(row + '\n')
+  '''
+  1. Mapping function used to convert string of plaintext chars into a string of 
+  vocabulary indices
+  2. Used to preprocess the target sequence input to decoder
+  '''
   max_len = get_max_len()
-  # print(max_len)
   chr_to_idx = get_chr_to_idx()
   alpha_array = ['28'] + [str(chr_to_idx[x]) for x in list(row)][:max_len] + ['29']
   return ' '.join(alpha_array + [str(chr_to_idx['<PAD>'])] * (max_len +2 - len(alpha_array)))
 
 def str_to_tensor(row):
+  '''
+  Mapping function used to convert an input string of space separated integers
+  into a tensor. Used by CipherText()
+  '''
   return torch.tensor([int(x) for x in row.split(' ')])
 
 def get_decoded_output(output_id_arrays):
+  '''
+  1. Used by ./code/train_test.py for validation_loop()
+  2. Input: (N,T) integer output list from decoder 
+  3. Output: (N,) string list of deciphered plaintext
+  '''
   N = len(output_id_arrays)
   idx_to_chr = get_idx_to_chr()
   decoded_sequences=[]
@@ -101,6 +127,16 @@ def get_decoded_output(output_id_arrays):
   return decoded_sequences
 
 def create_master_data(path, task, cip_len, space_enc):
+  '''
+  Input:
+  1. path: ./data/ where source files are stored
+  2. task, cip_len, space_enc: current experiment settings
+  
+  Returns:
+  1. (df_train, df_test) tuple of pandas.DataFrames
+
+  Also writes these dataframes to ../master_data/
+  '''
   set_max_len(cip_len)
   set_space_enc(space_enc)
   lang_labels = get_lang_labels()
@@ -131,6 +167,9 @@ def create_master_data(path, task, cip_len, space_enc):
 
 
 def get_tensor_df(filename, task, cip_len, space_enc):
+  '''
+  Called by create_master_data() to process each source file
+  '''
   nrows=1650//14
   if get_debug_mode():
     nrows = 5
@@ -138,21 +177,17 @@ def get_tensor_df(filename, task, cip_len, space_enc):
     nrows = 850//14
   df = pd.read_csv(filename, delimiter='\n', names=['text'], nrows=nrows)
 
+  #Create input_ids and labels as string dtype columns in DataFrame
+  #by calling mapping functions
   df['input_ids']=(df['text'].str.strip()).str.replace(' ','').map(freq_array)
   df['labels'] = (df['text'].str.strip()).str.replace(' ','').map(alpha_enc)
-
-  # strp_lines = list(df['labels'].values)
-  # debug_print("Element 0 of Stripped Lines List of Strings")
-  # debug_print(df['text'].values[0] + '\n')
-
-  # freq_lines =list(df['input_ids'].values)
-  # debug_print(freq_lines[0])
-  # if get_debug_mode():
-  #   display(df)
 
   return df.copy()
 
 def get_chr_to_idx():
+  '''
+  Defines vocabulary -> index mapping
+  '''
   alphabet = get_alphabet()
   vocab = {}
   vocab['_'] = 26
@@ -165,6 +200,9 @@ def get_chr_to_idx():
   return vocab
 
 def get_idx_to_chr():
+  '''
+  Defines index -> vocabulary mapping
+  '''
   alphabet = get_alphabet()
   vocab = {}
   vocab[26] = '_'
@@ -177,9 +215,23 @@ def get_idx_to_chr():
   return vocab
 
 def get_lang_labels():
+  '''
+  Returns a list of all languages, to generate a language label.
+  For examples 'catalan' is '0'
+  '''
   return ['catalan','english','german','latin','spanish','danish','finnish','hungarian','norwegian','swedish','dutch','french','italian','portuguese']
 
 def get_split_dfs(src_fname = '', train_split = 0.98, df=None):
+  '''
+  Creates train and val split DataFrames
+  Input:
+  1. src_fname: path to source .csv file to read DataFrame
+  2. train_split: split of train and val data
+  3. df: optional argument in-case train data is available in a DataFrame already
+
+  Returns:
+  df_train_df_val pandas.DataFrames
+  '''
 
   if df is not None:
     val_start = 1.0 - train_split

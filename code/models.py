@@ -30,26 +30,31 @@ from PositionalEncoding import PositionalEncoding
 
 class Deciphormer(torch.nn.Module):
     '''
-    Defining the base model:
-    1)
+    Defining the base model with the following components
+    1) Encoder Embedder: With padding-index=27. Output: (N,S,E)
+    2) Decoder Embedder: With padding-index=27
+    3) Positional Encoding: defined in ./PositionalEncoding.py
+    4) Transformer Encoder
+    5) Transformer Decoder
+    6) language_classifier: FC Network to classify encoder output into 14 languages
+    6) linear_out: To convert (N,T,E) decoder output to (N,T,ntoken)
     '''
 
     def __init__(self, ntoken: int = 30, d_model: int = 512, nhead: int = 8, d_hid: int = 2048, nlayers: int = 6,
                  dropout: float = 0.5, task = 'single', max_len = 256, space_enc='with_space'):
         # Initialize model attributes
         super().__init__()
-        self.d_model = d_model
-        self.nhead = nhead
-        self.d_hid = d_hid
-        self.nlayers = nlayers
-        self.dropout = dropout
-        self.best_val_acc = -1
-        self.task = task
-        self.seq_len = max_len + 1
-        self.space_enc = space_enc
+        self.d_model = d_model # model size
+        self.nhead = nhead #no. of attention heads
+        self.d_hid = d_hid #hidden size of FF layer
+        self.nlayers = nlayers #no. of encoder/decoder layers
+        self.dropout = dropout #dropout
+        self.best_val_acc = -1 
+        self.task = task #task in ['single', 'multi']
+        self.seq_len = max_len + 1 #cipher length + 1 (to account for SOS/EOS tokens)
+        self.space_enc = space_enc #space encoding scheme of experiment
 
         # Define model layers
-
         self.embedder = Embedding(ntoken, d_model, padding_idx = 27)
         self.pos_encoder = PositionalEncoding(d_model, max_len = d_model)
         encoder_layers = TransformerEncoderLayer(self.d_model, nhead, d_hid, dropout=dropout, batch_first = True)
@@ -64,6 +69,9 @@ class Deciphormer(torch.nn.Module):
         self.init_weights()
     
     def init_weights(self) -> None:
+      '''
+      Intialize weights of embedders and linear layers
+      '''
         initrange = 0.01
         self.embedder.weight.data.uniform_(-initrange, initrange)
         self.embedder2.weight.data.uniform_(-initrange, initrange)
@@ -74,13 +82,20 @@ class Deciphormer(torch.nn.Module):
         self.linearout.bias.data.zero_()
 
     def forward(self, input_ids, labels, X_att_mask = None, Y_att_mask = None, X_pad_mask = None, Y_pad_mask = None):
+      '''
+      Input:
+      1. Input_ids (N,S) and labels (N,T)
+      2. X_att_mask: (S,S) mask of zeros for full encoder self-attention
+      3.  Y_att_mask: (T,T) upper triangular mask for causal decoder attention
+      4. X_pad_mask, Y_pad_mask: (N,S) and (N,T) masks to indicate pad token positions
+      '''
       src = self.embedder(input_ids) * math.sqrt(self.d_model)
-      # print(src.shape)
+      
       src = self.pos_encoder(src)
-      # print(src.shape)
+      
       out1 = self.transformer_encoder(src, mask=X_att_mask, src_key_padding_mask = X_pad_mask)
       N = out1.size(0)
-      # print(out1.shape)
+      
 
       embed_tgt = self.embedder2(labels) * math.sqrt(self.d_model)
       out2 = self.transformer_decoder(embed_tgt, out1, tgt_mask = Y_att_mask, tgt_key_padding_mask=Y_pad_mask)
@@ -89,6 +104,9 @@ class Deciphormer(torch.nn.Module):
       return (out1, out2)
     
     def get_tgt_mask(self, size) -> torch.tensor:
+      '''
+      Function to return decoder attention masks
+      '''
       # Generates a squeare matrix where the each row allows one word more to be seen
       mask = torch.tril(torch.ones((size, size)) == 1) # Lower triangular matrix
       mask = mask.float()
@@ -105,49 +123,9 @@ class Deciphormer(torch.nn.Module):
       return mask
     
     def create_pad_mask(self, matrix: torch.tensor, pad_token: int) -> torch.tensor:
+      '''
+      Generate pad masks for an (N,S) tensor given a padding token ID
+      '''
       # If matrix = [1,2,3,0,0,0] where pad_token=0, the result mask is
       # [False, False, False, True, True, True]
       return (matrix == pad_token)
-
-
-# class MLC(Deciphormer):
-#   '''
-#   Multitasking with Language Classification
-#   '''
-
-#   def __init__(self, fc_dim: int = 256, langenc_type='bert-base-multilingual-cased', langenc_pos ='after', nouts: int = 14, **kwargs):
-#         # Initialize model attributes
-#         super(MLC, self).__init__(**kwargs)
-#         self.fc_dim = fc_dim
-#         self.langenc_type = langenc_type
-#         self.langenc_pos = langenc_pos
-
-#         # Define additional layers for MLC setup
-#         if self.langenc_type != 'custom':
-#             self.language_encoder = AutoModel.from_pretrained(self.langenc_type)
-#             self.lenc_tokenizer = AutoTokenizer.from_pretrained(self.langenc_type)
-#             self.lenc_out_size = 768
-#             self.get_lenc_out = lambda x: x['last_hidden_state'][:,0,:]
-            
-#         else:
-#             langenc_layers = TransformerEncoderLayer(self.d_model, nhead, d_hid, dropout, batch_first=True)
-#             self.language_encoder = TransformerEncoder(langenc_layers, nlayers)
-#             self.lenc_tokenizer = lambda x: x
-#             self.lenc_out_size = self.d_model
-#             self.get_lenc_out = lambda x: x
-#         self.language_classifier = nn.Sequential(
-#             nn.Linear(self.lenc_out_size, fc_dim),
-#             nn.ReLu(),
-#             nn.Dropout(p = self.dropout),
-#             nn.Linear(fc_dim, nouts)
-#             )
-        
-
-#   def forward(self, data: Tensor, lenc_mask, **kwargs) -> Tensor:
-#     out_inter, final_out1 = super(MCL,self).forward(data, **kwargs)
-#     final_out2 = self.lang
-    
-#     return (out1, out2)
-
-
-
