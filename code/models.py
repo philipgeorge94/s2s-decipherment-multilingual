@@ -35,7 +35,7 @@ class Deciphormer(torch.nn.Module):
     '''
 
     def __init__(self, ntoken: int = 30, d_model: int = 512, nhead: int = 8, d_hid: int = 2048, nlayers: int = 6,
-                 dropout: float = 0.0, task = 'single'):
+                 dropout: float = 0.5, task = 'single', max_len = 256, space_enc='with_space'):
         # Initialize model attributes
         super().__init__()
         self.d_model = d_model
@@ -45,17 +45,19 @@ class Deciphormer(torch.nn.Module):
         self.dropout = dropout
         self.best_val_acc = -1
         self.task = task
+        self.seq_len = max_len + 1
+        self.space_enc = space_enc
 
         # Define model layers
 
         self.embedder = Embedding(ntoken, d_model, padding_idx = 27)
         self.pos_encoder = PositionalEncoding(d_model, max_len = d_model)
-        encoder_layers = TransformerEncoderLayer(self.d_model, nhead, d_hid, dropout, batch_first = True)
+        encoder_layers = TransformerEncoderLayer(self.d_model, nhead, d_hid, dropout=dropout, batch_first = True)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
-        self.language_classifier = torch.nn.Linear(self.d_model * 258, 14)
+        self.language_classifier = torch.nn.Linear(self.d_model * self.seq_len, 14)
 
         self.embedder2 = Embedding(ntoken, d_model, padding_idx = 27)
-        decoder_layers = TransformerDecoderLayer(d_model, nhead, d_hid, dropout, batch_first = True)
+        decoder_layers = TransformerDecoderLayer(d_model, nhead, d_hid, dropout=dropout, batch_first = True)
         self.transformer_decoder = TransformerDecoder(decoder_layers, nlayers)
         self.linearout = torch.nn.Linear(d_model, ntoken)
 

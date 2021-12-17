@@ -135,3 +135,24 @@ def frequency_encode_string(input_string):
     # debug_print("Freq Encoded Stripped String")
     # debug_print(freq_enc.strip() + "|" + '\n')
     return freq_enc.strip() #this is space separated for readability
+    
+def frequency_encode_string_with_spaces(input_string):
+    c_string = input_string.replace(" ","")
+    #c_string = "".join(input_string.split('_'))
+    # debug_print("C String without _: ")
+    # debug_print(c_string + '\n')
+    x = Counter(c_string)
+    l = x.most_common()
+    # debug_print("Sorted Character Frequencies")
+    # debug_print(l)
+    # debug_print("")
+    freq = {}
+    for i in range(len(l)):
+      freq[l[i][0]] = i
+    freq_enc = ''
+    for c in input_string:
+      freq_enc += str(freq[c])
+      freq_enc += " "
+    # debug_print("Freq Encoded Stripped String")
+    # debug_print(freq_enc.strip() + "|" + '\n')
+    return freq_enc.strip() #this is space separated for readability

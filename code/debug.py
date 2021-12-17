@@ -1,5 +1,5 @@
-is_debug_mode = True
-is_dev_mode = True
+is_debug_mode = False
+is_dev_mode = False
 def debug_print(something = ''):
   if is_debug_mode:
     print(something)

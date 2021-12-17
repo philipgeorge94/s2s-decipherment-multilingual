@@ -1,4 +1,5 @@
 from datasets import *
+from pandas.io.parsers import _validate_parse_dates_arg
 from transformers import AutoTokenizer, AutoModel, AdamW, DataCollatorWithPadding, get_scheduler, logging
 import pandas as pd
 import torch
@@ -22,6 +23,8 @@ import string
 import random
 from collections import Counter
 from copy import deepcopy
+from pyter import ter
+from torchmetrics import WER
 
 FOLDERNAME = 'CS685-Project/s2s-decipherment-multilingual'
 # sys.path.append('/content/drive/My Drive/{}/code'.format(FOLDERNAME))
@@ -40,57 +43,66 @@ def fit(model, optimizer, loss_fn, train_dataloader, val_dataloader, epochs = 10
   Daniel Melchor: https://medium.com/@danielmelchor/a-detailed-guide-to-pytorchs-nn-transformer-module-c80afbc9ffb1
   """
   num_training_steps = epochs * len(train_dataloader)
+  if get_debug_mode() and not get_dev_mode():
+    epochs = 1
+    num_training_steps = 1
+
   # lr_scheduler = get_scheduler('linear', optimizer = optimizer, num_warmup_steps=0, num_training_steps=epochs)
   lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
-  every=int(0.1 * len(train_dataloader))
+  # every=int(0.1 * len(train_dataloader))
   progress_bar = tqdm(range(num_training_steps))
   best_model = deepcopy(model.state_dict())
   best_SER = 1.0
 
-  if get_debug_mode() and not get_dev_mode():
-    epochs = 1
-    num_training_steps = 1
-    every = 1
-
   # Used for plotting later on
-  train_loss_list, validation_loss_list = [], []
+  train_loss_epochs, validation_loss_epochs, val_SER_epochs = [], [], []
   
   print("Training and validating model")
   for epoch in range(epochs):
       print("-"*25, f"Epoch {epoch + 1}","-"*25)
       
-      train_loss = train_loop(model, optimizer, train_dataloader, loss_fn, lr_scheduler, progress_bar)
-      train_loss_list += [train_loss]
+      best_SER, train_loss_list, validation_loss_list, val_SER_list = train_loop(model, optimizer, train_dataloader, loss_fn, lr_scheduler, progress_bar, val_dataloader, best_SER)
+      train_loss_epochs += train_loss_list
+      validation_loss_epochs += validation_loss_list
+      val_SER_epochs += val_SER_list
       lr_scheduler.step()
       
-      validation_loss, SER, _ = validation_loop(model, loss_fn, val_dataloader)
-      validation_loss_list += [validation_loss]
+      # validation_loss, SER, _ = validation_loop(model, loss_fn, val_dataloader)
+      # validation_loss_list += [validation_loss]
 
-      if SER < best_SER:
-        torch.save({
-          'epoch': epoch,
-          'model_state_dict': model.state_dict(),
-          'optimizer_state_dict': optimizer.state_dict(),
-          'scheduler_state_dict': lr_scheduler.state_dict(),
-          'loss': validation_loss,
-          'SER' : SER
-          }, '/content/drive/My Drive/{}/output/saved_model.pth'.format(FOLDERNAME))
+      # if SER < best_SER:
+      #   torch.save({
+      #     'epoch': epoch,
+      #     'model_state_dict': model.state_dict(),
+      #     'optimizer_state_dict': optimizer.state_dict(),
+      #     'scheduler_state_dict': lr_scheduler.state_dict(),
+      #     'loss': validation_loss,
+      #     'SER' : SER
+      #     }, '/content/drive/My Drive/{}/output/saved_model.pth'.format(FOLDERNAME))
       
-      print(f"Training loss: {train_loss:.4f}")
-      print(f"Validation loss: {validation_loss:.4f}")
-      print(f"Validation SER: {SER:.4f}")
-      print()  
-  return train_loss_list, validation_loss_list, best_model
+      # print(f"Training loss: {train_loss:.4f}")
+      # print(f"Validation loss: {validation_loss:.4f}")
+      # print(f"Validation SER: {SER:.4f}")
+      # print()  
+  return train_loss_epochs, validation_loss_epochs, val_SER_epochs, best_model
 
 
 
-def train_loop(model, optimizer, train_data, loss_fn, lr_scheduler, progress_bar):
+def train_loop(model, optimizer, train_data, loss_fn, lr_scheduler, progress_bar, val_data, best_SER):
   iter_count = 0
   total_loss = 0
   N = len(train_data)
+  best_SER = best_SER
   
   # every=int(0.1 * len(train_data))
-  every=100
+  every=5
+
+  if get_debug_mode() and not get_dev_mode():
+    every=1
+
+  # Used for plotting later on
+  train_loss_list, validation_loss_list = [], []
+  val_SER_list = []
 
   model.train()
   for batch in train_data:
@@ -141,7 +153,7 @@ def train_loop(model, optimizer, train_data, loss_fn, lr_scheduler, progress_bar
     # debug_print(s2s_loss)
     
     if model.task == 'multi':
-      loss = lang_loss/100 + s2s_loss
+      loss = lang_loss/10 + s2s_loss
     else:
       loss = s2s_loss
 
@@ -153,11 +165,40 @@ def train_loop(model, optimizer, train_data, loss_fn, lr_scheduler, progress_bar
     optimizer.step()
     progress_bar.update(1)
     
-    total_loss += loss.detach().item()
+    # total_loss += loss.detach().item()
     if iter_count%every==0 or iter_count==1 or iter_count==len(train_data):
-      print("Iteration %d/%d: | Loss = %0.2f" % (iter_count,len(train_data),loss.detach().item()))
+      train_loss = loss.detach().item()
+      validation_loss, SER, pred, text = validation_loop(model, loss_fn, val_data)
+      best_model = 'saved_model_{}_{}_{}'.format(model.task, model.seq_len-1, model.space_enc)
+      
+      debug_print("Iteration" + str (iter_count))
+      debug_print(train_loss)
+      debug_print(validation_loss)
+      debug_print(SER)
+
+      if SER < best_SER:
+        best_SER = SER
+        torch.save({
+          'model_state_dict': model.state_dict(),
+          'optimizer_state_dict': optimizer.state_dict(),
+          'scheduler_state_dict': lr_scheduler.state_dict(),
+          'SER' : SER,
+          'iter_no': iter_count,
+          'iters': len(train_data)  
+          }, '/content/drive/My Drive/{}/output/{}.pth'.format(FOLDERNAME,best_model))
+      
+      print("Iteration %d/%d: | Train Loss = %0.2f | Val Loss = %0.2f | SER = %0.2f" % (iter_count,len(train_data),train_loss, validation_loss,SER))
+      d = {'text': text[:5], 'pred':pred[:5]}
+      df = pd.DataFrame(d)
+      display(df)
+      print()
+
+      if iter_count%every==0:
+        train_loss_list+=[train_loss]
+        validation_loss_list += [validation_loss]
+        val_SER_list += [SER]
     
-  return (total_loss/N)
+  return best_SER,train_loss_list, validation_loss_list, val_SER_list
 
 def validation_loop(model, loss_fn, dataloader):
   """
@@ -170,6 +211,7 @@ def validation_loop(model, loss_fn, dataloader):
   errors = 0
   total_loss = 0
   pred= []
+  text=[]
   
   with torch.no_grad():
     for batch in dataloader:
@@ -211,77 +253,82 @@ def validation_loop(model, loss_fn, dataloader):
       # debug_print(y_hat)
       # debug_print()
       
-      pred += get_decoded_output(y_hat.tolist()) 
-      
-      
+      pred += get_decoded_output(y_hat.tolist())
+      text+= get_decoded_output(Y.tolist())
       errors += torch.sum((y_hat!= Y)[Y_pad_mask==False]).detach().item()
       # debug_print(total_symbols)
       # debug_print(errors)
       total_loss += loss.detach().item()
       
-  return (total_loss / len(dataloader)), float(errors/total_symbols), pred
-
-def predict(model, dataloader):
-  """
-  Method from "A detailed guide to Pytorch's nn.Transformer() module.", by
-  Daniel Melchor: https://medium.com/@danielmelchor/a-detailed-guide-to-pytorchs-nn-transformer-module-c80afbc9ffb1
-  """
-  model.eval()
+    if model.space_enc=='with_space':
+      ER = float(errors/total_symbols)
+    else:
+      metric = WER()
+      ER = metric(' '.join(pred),' '.join(text))
   
-  y_input = torch.tensor([[28]], dtype=torch.long, device=device)
+  return (total_loss / len(dataloader)), ER, pred, text
 
-  num_tokens = len(input_sequence[0])
+# def predict(model, dataloader):
+#   """
+#   Method from "A detailed guide to Pytorch's nn.Transformer() module.", by
+#   Daniel Melchor: https://medium.com/@danielmelchor/a-detailed-guide-to-pytorchs-nn-transformer-module-c80afbc9ffb1
+#   """
+#   model.eval()
+  
+#   y_input = torch.tensor([[28]], dtype=torch.long, device=device)
 
-  for _ in range(max_length):
-    # Get source mask
-    tgt_mask = model.get_tgt_mask(y_input.size(1)).to(device)
+#   num_tokens = len(input_sequence[0])
+
+#   for _ in range(max_length):
+#     # Get source mask
+#     tgt_mask = model.get_tgt_mask(y_input.size(1)).to(device)
     
-    pred = model(input_sequence, y_input, tgt_mask)
+#     pred = model(input_sequence, y_input, tgt_mask)
     
-    next_item = pred.topk(1)[1].view(-1)[-1].item() # num with highest probability
-    next_item = torch.tensor([[next_item]], device=device)
+#     next_item = pred.topk(1)[1].view(-1)[-1].item() # num with highest probability
+#     next_item = torch.tensor([[next_item]], device=device)
 
-    # Concatenate previous input with predicted best word
-    y_input = torch.cat((y_input, next_item), dim=1)
+#     # Concatenate previous input with predicted best word
+#     y_input = torch.cat((y_input, next_item), dim=1)
 
-    # Stop if model predicts end of sentence
-    if next_item.view(-1).item() == EOS_token:
-      break
+#     # Stop if model predicts end of sentence
+#     if next_item.view(-1).item() == EOS_token:
+#       break
   
-  model.eval()
-  total_symbols = 0
-  errors = 0
-  total_loss = 0
-  pred= []
+#   model.eval()
+#   total_symbols = 0
+#   errors = 0
+#   total_loss = 0
+#   pred= []
   
-  with torch.no_grad():
-    for batch in dataloader:
-      batch = {k: v.to(device) for k, v in batch.items()}
-      ntoken = len(get_chr_to_idx())
-      X = batch['input_ids'][:,:-1].to(device)
-      Y = batch['labels'][:,1:].to(device)
-      y_input = torch.tensor([[28]], dtype=torch.long, device=device)
+#   with torch.no_grad():
+#     for batch in dataloader:
+#       batch = {k: v.to(device) for k, v in batch.items()}
+#       ntoken = len(get_chr_to_idx())
+#       X = batch['input_ids'][:,:-1].to(device)
+#       Y = batch['labels'][:,1:].to(device)
+#       y_input = torch.tensor([[28]], dtype=torch.long, device=device)
       
-      X_pad_mask = model.create_pad_mask(X,27).to(device)
-      Y_pad_mask = model.create_pad_mask(Y,27).to(device)
-      X_att_mask = torch.zeros((X.size(1),X.size(1))).float().to(device)
-      Y_att_mask = model.get_tgt_mask(X.size(1)).to(device)
+#       X_pad_mask = model.create_pad_mask(X,27).to(device)
+#       Y_pad_mask = model.create_pad_mask(Y,27).to(device)
+#       X_att_mask = torch.zeros((X.size(1),X.size(1))).float().to(device)
+#       Y_att_mask = model.get_tgt_mask(X.size(1)).to(device)
       
       
-      total_symbols += torch.sum (X_pad_mask == False)
+#       total_symbols += torch.sum (X_pad_mask == False)
 
-      enc_out, dec_out = model(X,Y, X_att_mask, Y_att_mask, X_pad_mask, Y_pad_mask)
+#       enc_out, dec_out = model(X,Y, X_att_mask, Y_att_mask, X_pad_mask, Y_pad_mask)
 
-      loss = loss_fn(dec_out.view(-1, ntoken),Y.reshape(-1))   
+#       loss = loss_fn(dec_out.view(-1, ntoken),Y.reshape(-1))   
       
-      y_hat = torch.argmax(dec_out, dim=2, keepdim=False)
+#       y_hat = torch.argmax(dec_out, dim=2, keepdim=False)
       
-      pred += get_decoded_output(y_hat.tolist()) 
+#       pred += get_decoded_output(y_hat.tolist()) 
       
       
-      errors += torch.sum((y_hat!= Y)[Y_pad_mask==False])
-      # debug_print(total_symbols)
-      # debug_print(errors)
-      total_loss += loss.detach().item()
+#       errors += torch.sum((y_hat!= Y)[Y_pad_mask==False])
+#       # debug_print(total_symbols)
+#       # debug_print(errors)
+#       total_loss += loss.detach().item()
 
-  return y_input.view(-1).tolist()
+#   return y_input.view(-1).tolist()
